@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Just Go Explore It!</title>
+  <link rel="icon" href="imagens/favicon.png" type="image/png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <header>
+    <h1>📍 justgoexplore.it</h1>
+    <input type="text" id="search-box" placeholder="Buscar lugares..." oninput="onSearch(this.value)" />
+    <div class="cat-btns">
+      <button class="cat-btn active" id="btn-all" onclick="filterCategory('all')">Todos</button>
+      <button class="cat-btn" id="btn-turistico" onclick="filterCategory('turistico')">🏛 Turístico</button>
+      <button class="cat-btn" id="btn-restaurante" onclick="filterCategory('restaurante')">🍽 Restaurantes</button>
+      <button class="cat-btn" id="btn-comercio" onclick="filterCategory('comercio')">🛍 Comércios</button>
+    </div>
+
+    <div id="points-hud">
+      <span id="points-icon">⚡</span>
+      <div id="points-info">
+        <span id="points-label">Seus pontos</span>
+        <span id="points-value">0 pts</span>
+        <div id="xp-bar-wrap">
+          <div id="xp-bar" style="width:0%"></div>
+        </div>
+      </div>
+      <span id="points-badge">Explorador</span>
+    </div>
+
+    <!-- BOTÃO SUGESTÃO -->
+    <button id="sugestao-btn" onclick="abrirSugestao()">💡 Sugerir local</button>
+  </header>
+
+  <main>
+    <div id="sidebar">
+      <div id="sidebar-header">Locais encontrados</div>
+      <div id="place-list"></div>
+    </div>
+
+    <div id="map">
+      <!-- Painel de Missões -->
+      <div id="mission-panel">
+        <div id="mission-panel-header">
+          <span id="mission-place-emoji">📍</span>
+          <div>
+            <div id="mission-place-name">Local</div>
+            <div id="mission-place-sub">Missões disponíveis</div>
+          </div>
+          <button id="mission-close" onclick="closeMissions()">✕</button>
+        </div>
+        <div id="mission-list"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL DE SUGESTÃO -->
+  <div id="sugestao-overlay" onclick="fecharSugestaoFora(event)">
+    <div id="sugestao-modal">
+      <div id="sugestao-header">
+        <div>
+          <div id="sugestao-title">💡 Sugerir um local</div>
+          <div id="sugestao-sub">Sua sugestão será enviada para revisão</div>
+        </div>
+        <button id="sugestao-close" onclick="fecharSugestao()">✕</button>
+      </div>
+
+      <div id="sugestao-body">
+        <div class="sug-field">
+          <label class="sug-label">Nome do local *</label>
+          <input class="sug-input" id="sug-nome" type="text" placeholder="Ex: Parque das Flores" />
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">Categoria *</label>
+          <select class="sug-input" id="sug-cat">
+            <option value="">Selecione...</option>
+            <option value="turistico">🏛 Ponto Turístico</option>
+            <option value="restaurante">🍽 Restaurante / Café</option>
+            <option value="comercio">🛍 Comércio / Serviço</option>
+          </select>
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">Endereço ou referência</label>
+          <input class="sug-input" id="sug-ende" type="text" placeholder="Ex: Rua das Palmeiras, 123" />
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">Por que merece estar no mapa?</label>
+          <textarea class="sug-input" id="sug-desc" rows="3" placeholder="Descreva brevemente o local..."></textarea>
+        </div>
+        <div class="sug-field">
+          <label class="sug-label">Seu nome (opcional)</label>
+          <input class="sug-input" id="sug-autor" type="text" placeholder="Como quer ser creditado?" />
+        </div>
+
+        <div id="sug-feedback"></div>
+
+        <button id="sug-enviar" onclick="enviarSugestao()">Enviar sugestão</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+
+    /* ─────────────────────────────────────────
+       CONFIGURAÇÃO — cole aqui a URL do seu
+       Google Apps Script após criá-lo
+       ───────────────────────────────────────── */
+    const APPS_SCRIPT_URL = 'COLE_SUA_URL_AQUI';
+
+    /* ── DADOS ── */
+    const places = [
+      { id: 1, name: "Campo São Conrado", cat: "turistico", emoji: "🌳", desc: "'Sempre bom ver uma partida de futebol' - José Ronaldo Bernardo", lat: -23.122396, lng: -47.244146, rating: "4.2" },
+      { id: 2, name: "Catedral Nossa Senhora da Candelária", cat: "turistico", emoji: "⛪", desc: "Igreja histórica e patrimônio cultural no coração da cidade.", lat: -23.0904, lng: -47.2183, rating: "4.8" },
+      { id: 3, name: "Museu Histórico e Cultural", cat: "turistico", emoji: "🏛", desc: "Acervo sobre a história de Indaiatuba desde sua fundação.", lat: -23.0910, lng: -47.2210, rating: "4.5" },
+      { id: 4, name: "Praça Rui Barbosa", cat: "turistico", emoji: "🌸", desc: "Praça central com área verde e comércio ao redor.", lat: -23.0900, lng: -47.2195, rating: "4.3" },
+      { id: 5, name: "Lago Municipal", cat: "turistico", emoji: "🦢", desc: "Espelho d'água para caminhada e relaxamento.", lat: -23.0875, lng: -47.2140, rating: "4.6" },
+      { id: 6, name: "Restaurante Mamma Mia", cat: "restaurante", emoji: "🍝", desc: "Culinária italiana com massas artesanais.", lat: -23.0920, lng: -47.2170, rating: "4.6" },
+      { id: 7, name: "Churrascaria Pampa Sul", cat: "restaurante", emoji: "🥩", desc: "Rodízio completo de carnes nobres, ambiente familiar.", lat: -23.0930, lng: -47.2230, rating: "4.4" },
+      { id: 8, name: "Restaurante Sabor da Terra", cat: "restaurante", emoji: "🥗", desc: "Comida caseira e saudável, buffet por quilo.", lat: -23.0880, lng: -47.2200, rating: "4.5" },
+      { id: 9, name: "Café do Parque", cat: "restaurante", emoji: "☕", desc: "Café e lanches artesanais, vista para o parque.", lat: -23.0870, lng: -47.2155, rating: "4.3" },
+      { id: 10, name: "Pizzaria Bella Napoli", cat: "restaurante", emoji: "🍕", desc: "Pizzas artesanais no forno a lenha.", lat: -23.0945, lng: -47.2190, rating: "4.7" },
+      { id: 11, name: "Shopping Indaiatuba Garden", cat: "comercio", emoji: "🛍", desc: "Principal shopping com lojas, alimentação e cinemas.", lat: -23.0860, lng: -47.2250, rating: "4.2" },
+      { id: 12, name: "Mercado Central", cat: "comercio", emoji: "🧺", desc: "Feira e produtos locais frescos, aberto todo dia.", lat: -23.0915, lng: -47.2178, rating: "4.4" },
+      { id: 13, name: "Farmácia Preço Popular", cat: "comercio", emoji: "💊", desc: "Rede de farmácias com amplo estoque.", lat: -23.0897, lng: -47.2220, rating: "4.1" },
+      { id: 14, name: "Livraria Cultura Local", cat: "comercio", emoji: "📚", desc: "Livros, papelaria, presentes e espaço de leitura.", lat: -23.0925, lng: -47.2160, rating: "4.6" },
+      { id: 15, name: "Academia FitLife", cat: "comercio", emoji: "💪", desc: "Academia completa com personal trainer.", lat: -23.0940, lng: -47.2145, rating: "4.5" },
+    ];
+
+    const missions = {
+      1: [
+        { id: "1a", icon: "📸", name: "tesatewas jiqwe mnjqe", pts: 30 },
+        { id: "1b", icon: "🚶", name: "Faça uma trilha de 30 minutos", pts: 50 },
+      ],
+      2: [
+        { id: "2a", icon: "🙏", name: "Visite o interior da catedral", pts: 25 },
+        { id: "2b", icon: "📸", name: "Fotografe a fachada histórica", pts: 20 },
+        { id: "2c", icon: "📖", name: "Descubra o ano de fundação da Igreja", pts: 35 },
+      ],
+      3: [
+        { id: "3a", icon: "🖼", name: "Veja ao menos 5 peças do acervo", pts: 40 },
+        { id: "3b", icon: "📝", name: "Anote um fato histórico curioso", pts: 30 },
+        { id: "3c", icon: "🗣", name: "Fale com um guia do museu", pts: 50 },
+      ],
+      4: [
+        { id: "4a", icon: "☕", name: "Tome um café sentado na praça", pts: 20 },
+        { id: "4b", icon: "📸", name: "Capture o pôr do sol na praça", pts: 35 },
+        { id: "4c", icon: "🌳", name: "Descanse sob uma árvore por 10 minutos", pts: 15 },
+      ],
+      5: [
+        { id: "5a", icon: "🦆", name: "Aviste ao menos 3 aves no lago", pts: 40 },
+        { id: "5b", icon: "🚴", name: "Pedale ao redor do lago", pts: 45 },
+        { id: "5c", icon: "🎣", name: "Observe alguém pescando", pts: 20 },
+      ],
+      6: [
+        { id: "6a", icon: "🍝", name: "Experimente o prato especial do dia", pts: 30 },
+        { id: "6b", icon: "🍷", name: "Harmonize com uma bebida italiana", pts: 25 },
+        { id: "6c", icon: "⭐", name: "Deixe uma avaliação online", pts: 20 },
+      ],
+      7: [
+        { id: "7a", icon: "🥩", name: "Prove pelo menos 5 cortes diferentes", pts: 35 },
+        { id: "7b", icon: "👨‍🍳", name: "Pergunte ao garçom sobre o corte favorito", pts: 20 },
+        { id: "7c", icon: "🎉", name: "Leve alguém para comemorar algo", pts: 40 },
+      ],
+      8: [
+        { id: "8a", icon: "🥗", name: "Monte um prato 100% vegetariano", pts: 25 },
+        { id: "8b", icon: "💬", name: "Converse com outro cliente sobre a comida", pts: 15 },
+        { id: "8c", icon: "🔄", name: "Volte duas vezes na mesma semana", pts: 50 },
+      ],
+      9: [
+        { id: "9a", icon: "☕", name: "Peça o café especial da casa", pts: 20 },
+        { id: "9b", icon: "📚", name: "Leia algo por 20 minutos no local", pts: 30 },
+        { id: "9c", icon: "📸", name: "Fotografe sua bebida artisticamente", pts: 15 },
+      ],
+      10: [
+        { id: "10a", icon: "🍕", name: "Experimente uma pizza especial da semana", pts: 30 },
+        { id: "10b", icon: "🔥", name: "Assista à pizza saindo do forno a lenha", pts: 25 },
+        { id: "10c", icon: "👥", name: "Vá com um grupo de 4 ou mais pessoas", pts: 40 },
+      ],
+      11: [
+        { id: "11a", icon: "🎬", name: "Assista a um filme no cinema", pts: 40 },
+        { id: "11b", icon: "🛍", name: "Visite ao menos 5 lojas diferentes", pts: 25 },
+        { id: "11c", icon: "🍔", name: "Almoce na praça de alimentação", pts: 20 },
+      ],
+      12: [
+        { id: "12a", icon: "🧺", name: "Compre um produto local artesanal", pts: 35 },
+        { id: "12b", icon: "🌽", name: "Descubra a fruta mais exótica da feira", pts: 25 },
+        { id: "12c", icon: "🤝", name: "Converse com um feirante local", pts: 20 },
+      ],
+      13: [
+        { id: "13a", icon: "💊", name: "Confira um medicamento genérico vs original", pts: 15 },
+        { id: "13b", icon: "🩺", name: "Pergunte sobre um suplemento vitamínico", pts: 20 },
+        { id: "13c", icon: "😊", name: "Agradeça um atendente pelo serviço", pts: 10 },
+      ],
+      14: [
+        { id: "14a", icon: "📖", name: "Leia a primeira página de um livro novo", pts: 20 },
+        { id: "14b", icon: "🛒", name: "Compre um livro de autor local", pts: 40 },
+        { id: "14c", icon: "✍", name: "Escreva uma recomendação de leitura", pts: 30 },
+      ],
+      15: [
+        { id: "15a", icon: "🏋", name: "Faça uma aula experimental de graça", pts: 40 },
+        { id: "15b", icon: "💧", name: "Complete um treino de 45 minutos", pts: 55 },
+        { id: "15c", icon: "🤸", name: "Faça alongamento por 10 minutos", pts: 20 },
+      ],
+    };
+
+    /* ── ESTADO ── */
+    const catColor = { turistico: "#1D9E75", restaurante: "#D85A30", comercio: "#378ADD" };
+    const catLabel = { turistico: "Turístico", restaurante: "Restaurante", comercio: "Comércio" };
+    const catBadge = { turistico: "badge-turistico", restaurante: "badge-restaurante", comercio: "badge-comercio" };
+
+    let map, markers = [], currentFilter = "all", currentSearch = "";
+    let totalPoints = 0;
+    const completedMissions = new Set();
+
+    /* ── PERSISTÊNCIA ── */
+    function saveProgress() {
+      localStorage.setItem('indaiatuba_pts', totalPoints);
+      localStorage.setItem('indaiatuba_missions', JSON.stringify([...completedMissions]));
+    }
+    function loadProgress() {
+      try {
+        const pts = localStorage.getItem('indaiatuba_pts');
+        const ms = localStorage.getItem('indaiatuba_missions');
+        if (pts) totalPoints = parseInt(pts);
+        if (ms) JSON.parse(ms).forEach(id => completedMissions.add(id));
+      } catch (e) { }
+    }
+
+    const LEVELS = [
+      { pts: 0, label: "Novato" },
+      { pts: 100, label: "Aventureiro" },
+      { pts: 300, label: "Descobridor" },
+      { pts: 600, label: "Desbravador" },
+      { pts: 1000, label: "Lendário" },
+      { pts: 10000, label: "Explorador"},
+    ];
+
+    /* ── PONTOS ── */
+    function getLevel(pts) {
+      let lv = LEVELS[0];
+      for (const l of LEVELS) { if (pts >= l.pts) lv = l; }
+      return lv;
+    }
+    function getNextLevel(pts) {
+      for (const l of LEVELS) { if (pts < l.pts) return l; }
+      return null;
+    }
+    function updateHUD() {
+      const lv = getLevel(totalPoints);
+      const nxt = getNextLevel(totalPoints);
+      document.getElementById('points-value').textContent = totalPoints + ' pts';
+      document.getElementById('points-badge').textContent = lv.label;
+      const pct = nxt ? Math.round(((totalPoints - lv.pts) / (nxt.pts - lv.pts)) * 100) : 100;
+      document.getElementById('xp-bar').style.width = pct + '%';
+    }
+    function showPtsAnim(pts, el) {
+      const span = document.createElement('span');
+      span.className = 'pts-pop';
+      span.textContent = '+' + pts + ' pts';
+      const rect = el.getBoundingClientRect();
+      span.style.left = (rect.left + rect.width / 2 - 30) + 'px';
+      span.style.top = (rect.top - 10) + 'px';
+      document.body.appendChild(span);
+      setTimeout(() => span.remove(), 1500);
+    }
+
+    /* ── MISSÕES ── */
+    function openMissions(placeId) {
+      const p = places.find(x => x.id === placeId);
+      const ms = missions[placeId] || [];
+      const panel = document.getElementById('mission-panel');
+
+      document.getElementById('mission-place-emoji').textContent = p.emoji;
+      document.getElementById('mission-place-name').textContent = p.name;
+
+      const done = ms.filter(m => completedMissions.has(m.id)).length;
+      document.getElementById('mission-place-sub').textContent =
+        done === ms.length && ms.length > 0
+          ? '🎉 Todas as missões completas!'
+          : `${done}/${ms.length} missões concluídas`;
+
+      const list = document.getElementById('mission-list');
+      list.innerHTML = '';
+      ms.forEach(m => {
+        const isDone = completedMissions.has(m.id);
+        const card = document.createElement('div');
+        card.className = 'mission-card' + (isDone ? ' done' : '');
+        card.innerHTML = `
+      <span class="mission-icon">${m.icon}</span>
+      <div class="mission-body">
+        <div class="mission-name">${m.name}</div>
+        <span class="mission-pts">${isDone ? '✓ ' : ''}+${m.pts} pts</span>
+      </div>
+      ${!isDone ? `<button class="mission-complete-btn" data-mid="${m.id}" data-pts="${m.pts}">Concluir</button>` : ''}
+    `;
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll('.mission-complete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const mid = btn.dataset.mid;
+          const pts = parseInt(btn.dataset.pts);
+          completedMissions.add(mid);
+          totalPoints += pts;
+          saveProgress();
+          updateHUD();
+          showPtsAnim(pts, btn);
+          const ms2 = missions[placeId] || [];
+          const done2 = ms2.filter(m => completedMissions.has(m.id)).length;
+          const badge = document.querySelector(`#item-${placeId} .place-missions-count`);
+          if (badge) badge.textContent = `🎯 ${done2}/${ms2.length}`;
+          openMissions(placeId);
+        });
+      });
+
+      panel.style.display = 'block';
+    }
+    function closeMissions() {
+      document.getElementById('mission-panel').style.display = 'none';
+    }
+
+    /* ── SUGESTÃO ── */
+    function abrirSugestao() {
+      document.getElementById('sugestao-overlay').classList.add('active');
+      document.getElementById('sug-feedback').textContent = '';
+      document.getElementById('sug-feedback').className = '';
+    }
+    function fecharSugestao() {
+      document.getElementById('sugestao-overlay').classList.remove('active');
+    }
+    function fecharSugestaoFora(e) {
+      if (e.target === document.getElementById('sugestao-overlay')) fecharSugestao();
+    }
+
+    async function enviarSugestao() {
+      const nome = document.getElementById('sug-nome').value.trim();
+      const cat = document.getElementById('sug-cat').value;
+      const ende = document.getElementById('sug-ende').value.trim();
+      const desc = document.getElementById('sug-desc').value.trim();
+      const autor = document.getElementById('sug-autor').value.trim();
+      const fb = document.getElementById('sug-feedback');
+      const btn = document.getElementById('sug-enviar');
+
+      if (!nome || !cat) {
+        fb.textContent = '⚠️ Preencha pelo menos o nome e a categoria.';
+        fb.className = 'sug-feedback-erro';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      fb.textContent = '';
+      fb.className = '';
+
+      const dados = { nome, cat, ende, desc, autor, data: new Date().toLocaleString('pt-BR') };
+
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dados)
+        });
+        fb.textContent = '✅ Sugestão enviada! Obrigado pela contribuição.';
+        fb.className = 'sug-feedback-ok';
+        document.getElementById('sug-nome').value = '';
+        document.getElementById('sug-cat').value = '';
+        document.getElementById('sug-ende').value = '';
+        document.getElementById('sug-desc').value = '';
+        document.getElementById('sug-autor').value = '';
+        setTimeout(fecharSugestao, 2200);
+      } catch (e) {
+        fb.textContent = '❌ Erro ao enviar. Verifique sua conexão.';
+        fb.className = 'sug-feedback-erro';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enviar sugestão';
+      }
+    }
+
+    /* ── MAPA ── */
+    function makeDivIcon(emoji, cat) {
+      const c = catColor[cat];
+      return L.divIcon({
+        className: '',
+        html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${c};border:2.5px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;">
+             <span style="transform:rotate(45deg);font-size:16px;line-height:1;">${emoji}</span>
+           </div>`,
+        iconSize: [36, 36], iconAnchor: [18, 36], popupAnchor: [0, -38]
+      });
+    }
+    function matchesFilter(p) {
+      const catOk = currentFilter === 'all' || p.cat === currentFilter;
+      const searchOk = !currentSearch || p.name.toLowerCase().includes(currentSearch) || p.desc.toLowerCase().includes(currentSearch);
+      return catOk && searchOk;
+    }
+    function buildList() {
+      const list = document.getElementById('place-list');
+      const header = document.getElementById('sidebar-header');
+      const filtered = places.filter(matchesFilter);
+      header.textContent = `${filtered.length} local${filtered.length !== 1 ? 'is' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`;
+      list.innerHTML = '';
+      if (!filtered.length) { list.innerHTML = '<div class="empty-state">Nenhum local encontrado.</div>'; return; }
+      filtered.forEach(p => {
+        const ms = missions[p.id] || [];
+        const done = ms.filter(m => completedMissions.has(m.id)).length;
+        const div = document.createElement('div');
+        div.className = 'place-item';
+        div.id = 'item-' + p.id;
+        div.innerHTML = `
+      <span class="place-emoji">${p.emoji}</span>
+      <div class="place-info">
+        <div class="place-name">${p.name}</div>
+        <div class="place-meta">
+          <span class="place-cat-badge ${catBadge[p.cat]}">${catLabel[p.cat]}</span>
+          ⭐ ${p.rating}
+          <span class="place-missions-count">🎯 ${done}/${ms.length}</span>
+        </div>
+      </div>`;
+        div.addEventListener('click', () => {
+          document.querySelectorAll('.place-item').forEach(el => el.classList.remove('active'));
+          div.classList.add('active');
+          const m = markers.find(m => m.placeId === p.id);
+          if (m) { map.setView([p.lat, p.lng], 16, { animate: true }); setTimeout(() => m.openPopup(), 250); }
+          openMissions(p.id);
+        });
+        list.appendChild(div);
+      });
+    }
+    function updateMarkers() {
+      markers.forEach(m => {
+        if (matchesFilter(places.find(p => p.id === m.placeId))) m.addTo(map);
+        else map.removeLayer(m);
+      });
+    }
+    function filterCategory(cat) {
+      currentFilter = cat;
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-' + cat).classList.add('active');
+      updateMarkers();
+      buildList();
+    }
+    function onSearch(val) {
+      currentSearch = val.trim().toLowerCase();
+      updateMarkers();
+      buildList();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProgress();
+      map = L.map('map').setView([-23.0904, -47.2183], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      places.forEach(p => {
+        const ms = missions[p.id] || [];
+        const m = L.marker([p.lat, p.lng], { icon: makeDivIcon(p.emoji, p.cat) })
+          .addTo(map)
+          .bindPopup(`
+        <div class="popup-title">${p.emoji} ${p.name}</div>
+        <div class="popup-desc">${p.desc}</div>
+        <div class="popup-footer">
+          <span class="place-cat-badge ${catBadge[p.cat]}">${catLabel[p.cat]}</span>
+          <span>⭐ ${p.rating}</span>
+          <span class="popup-missions">🎯 ${ms.length} missões</span>
+        </div>
+      `, { maxWidth: 240 });
+        m.placeId = p.id;
+        m.placecat = p.cat;
+        m.on('click', () => {
+          document.querySelectorAll('.place-item').forEach(el => el.classList.remove('active'));
+          const item = document.getElementById('item-' + p.id);
+          if (item) { item.classList.add('active'); item.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+          openMissions(p.id);
+        });
+        markers.push(m);
+      });
+
+      updateHUD();
+      buildList();
+    });
+  </script>
+
+  <!-- POPUP DE BOAS-VINDAS -->
+  <div id="popup-overlay" style="
+  position:fixed; inset:0; z-index:9999;
+  background:rgba(0,0,0,0.55);
+  display:flex; align-items:center; justify-content:center;
+  animation: fadeInOverlay 0.4s ease;
+">
+    <div style="
+    background:#fff; border-radius:18px;
+    padding:36px 40px 32px;
+    max-width:420px; width:90%;
+    text-align:center;
+    box-shadow:0 20px 60px rgba(0,0,0,0.25);
+    animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  ">
+      <div style="font-size:48px; margin-bottom:14px;">📍</div>
+      <h2 style="font-size:20px; font-weight:700; color:#1a1a1a; margin-bottom:10px;">Bem-vindo ao justgoexplore.it!
+      </h2>
+      <p style="font-size:14px; color:#2b2b2b; line-height:1.7; margin-bottom:8px;">
+        ⚠️ <strong>AVISO:</strong> Apenas a cidade de Indaiatuba está disponível por enquanto, por ser um projeto em andamento, por enquanto o site ficará neste github antes de migrarmos para um serviço de hospedagem.
+      </p>
+      <p style="font-size:14px; color:#666; line-height:1.7; margin-bottom:8px;">
+        Explore a cidade, clique nos locais do mapa e complete <strong>missões</strong> para ganhar pontos e subir de
+        nível.
+      </p>
+      <p style="font-size:13px; color:#999; margin-bottom:28px;">
+        Seu progresso é salvo automaticamente no navegador.
+      </p>
+      <button id="popup-btn" disabled onclick="fecharPopup()" style="
+      padding:12px 36px; font-size:14px; font-weight:600;
+      border:none; border-radius:30px; background:#ccc; color:#fff;
+      cursor:not-allowed; transition: background 0.3s, transform 0.1s;
+    ">Aguarde <span id="popup-countdown">5</span>s...</button>
+    </div>
+  </div>
+
+  <style>
+    @keyframes fadeInOverlay {
+      from {
+        opacity: 0
+      }
+
+      to {
+        opacity: 1
+      }
+    }
+
+    @keyframes popIn {
+      from {
+        opacity: 0;
+        transform: scale(0.85)
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1)
+      }
+    }
+
+    @keyframes fadeOutOverlay {
+      from {
+        opacity: 1
+      }
+
+      to {
+        opacity: 0
+      }
+    }
+  </style>
+
+  <script>
+    (function () {
+      let secs = 5;
+      const btn = document.getElementById('popup-btn');
+      const cd = document.getElementById('popup-countdown');
+      const t = setInterval(() => {
+        secs--;
+        if (secs > 0) { cd.textContent = secs; }
+        else {
+          clearInterval(t);
+          btn.disabled = false;
+          btn.textContent = 'Começar a explorar!';
+          btn.style.background = '#378ADD';
+          btn.style.cursor = 'pointer';
+          btn.onmouseover = () => btn.style.background = '#2a70be';
+          btn.onmouseout = () => btn.style.background = '#378ADD';
+          btn.onmousedown = () => btn.style.transform = 'scale(0.97)';
+          btn.onmouseup = () => btn.style.transform = 'scale(1)';
+        }
+      }, 1000);
+    })();
+
+    function fecharPopup() {
+      const o = document.getElementById('popup-overlay');
+      o.style.animation = 'fadeOutOverlay 0.3s ease forwards';
+      setTimeout(() => o.remove(), 300);
+    }
+  </script>
+</body>
+
+</html>
